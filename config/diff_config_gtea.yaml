@@ -1,0 +1,10 @@
+model_parameters:
+    timestep_dim: 10
+    sample_num_timesteps: 50 #sample
+    condition_dim: 12 # class_size + 1
+    num_timesteps: 100 #training
+    beta_start: 0.01
+    beta_end: 0.1
+dataset:
+    feature_dim: 2048
+    class_size: 11
