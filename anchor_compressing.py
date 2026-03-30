@@ -98,7 +98,6 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
                 logging.info(f"Iteration: {dynamic_iteration+1}")
                 logging.info(f"Budget: {anchor_budget}")
                 logging.info(f"Anchors: {anchor_distibution}")
-                logging.info(f"Errors: {[float(a) for a in action_rec_error]}")
                 dynamic_iteration += 1
 
             index_star = np.argmax(action_rec_error) #worst performing sub sequence

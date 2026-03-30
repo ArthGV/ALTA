@@ -16,7 +16,7 @@ ALTA is a framework for action segmentation dataset condensation using adaptive 
 - Arthème Gauthier-Villars — ETH Zürich / National Univerity of Singapore
 - Guodong Ding — National Univerity of Singapore
 
-**Project Supervisor:** 
+**Project Supervisors:** 
 - Dr. Angela Yao — National Univerity of Singapore
 - Prof. Dr. Siyu Tang — ETH Zürich
 
