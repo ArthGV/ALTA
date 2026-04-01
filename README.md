@@ -47,8 +47,19 @@ python train_diffusion_model.py --dataset <dataset_name> --config_path <config_p
 
 ### 3. Compress the Dataset
 
+`original_dataset` → `anchors` + `anchors_indices` + `reconstructed_dataset`
+
 ```bash
 python anchor_compressing.py --dataset <dataset_name> --config_path <config_path> --model_path <model_path>
+
+```
+
+### 4. Reconstruct dataset
+
+`anchors` + `anchors_indices` → `reconstructed_dataset`
+
+```bash
+python dataset_reconstruction.py --dataset <dataset_name> --config_path <config_path> --model_path <model_path> --compressed_folder <folder_path> 
 
 ```
 

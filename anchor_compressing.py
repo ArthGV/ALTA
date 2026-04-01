@@ -1,4 +1,5 @@
 import torch
+import pickle
 import ast
 import glob
 import numpy as np
@@ -6,7 +7,7 @@ import logging
 import sys
 from tqdm import tqdm
 from diffusion_model import load_diffusion_model
-from inter import interpolation, select_anchors
+from inter import compress_sequence
 from utils import format_output
 import torch.nn.functional as F
 import os
@@ -32,7 +33,7 @@ args = parser.parse_args()
 
 ANCHOR_STRIDE = args.stride
 
-log_filename = f"{args.dataset}_split{args.split}_num_anchors{args.num_anchors}.log"
+log_filename = f"anchor_compressing_{args.dataset}_split{args.split}_num_anchors{args.num_anchors}.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(filename)s] => %(message)s",
@@ -47,9 +48,8 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
     model, model_config = load_diffusion_model(device, model_config_path=args.config_path, model_weights_path=args.model_path)
     SAMPLE_NUM_TIMESTEP = model_config['model_parameters']['sample_num_timesteps']
     CLASS_SIZE = model_config['dataset']['class_size']
-    best_video_feats, best_video_noises = [], []
-    seq = []
 
+    seq = []
     with open(video_seq, "r") as f: 
         for line in f:
             seq.append(ast.literal_eval(line.strip()))
@@ -70,7 +70,7 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
     action_indexes = []
     actions_durations = []
     index = 0
-    best_video_feats, best_video_noises = [], []
+    video_feats, video_anchors, video_anchors_ind = [], [], []
     for action_ind, s in enumerate(seq):
         action, duration = s
         if duration == 1:
@@ -79,14 +79,16 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
         num_anchors = anchor_distibution[action_ind]
         if args.fixed is True:
             num_anchors = min(duration, args.num_anchors)
-        
-        outputs, noise, gt_T = compress_action(device, model, actions_classes, feats, duration, action, num_anchors, SAMPLE_NUM_TIMESTEP, CLASS_SIZE, index)
+        gt_T = torch.from_numpy(feats[:, index : index + duration].T).to(device)
+
+        recon, anchors, anchors_ind = compress_sequence(device, model, gt_T, actions_classes, duration, args.anchor_style, args.inter_style, action, num_anchors, SAMPLE_NUM_TIMESTEP, CLASS_SIZE)
 
         action_indexes.append(index)
         actions_durations.append(s)
-        action_rec_error.append(F.mse_loss(outputs, gt_T).cpu())
-        best_video_feats.append(outputs.detach().cpu().numpy())
-        best_video_noises.append(noise.detach().cpu().numpy())
+        action_rec_error.append(F.mse_loss(recon, gt_T).cpu())
+        video_feats.append(recon.detach().cpu().numpy())
+        video_anchors.append(anchors.detach().cpu().numpy())
+        video_anchors_ind.append(anchors_ind)
         index += duration
 
     if args.fixed is False:
@@ -103,17 +105,19 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
             index_star = np.argmax(action_rec_error) #worst performing sub sequence
             index = action_indexes[index_star]
             action, duration = actions_durations[index_star]
-
             spent_budget = min(ANCHOR_STRIDE, anchor_budget, duration - anchor_distibution[index_star])
             anchor_distibution[index_star] += spent_budget
             num_anchors = anchor_distibution[index_star]
             anchor_budget -= spent_budget
+            gt_T = torch.from_numpy(feats[:, index : index + duration].T).to(device)
 
-            outputs, noise, gt_T = compress_action(device, model, actions_classes, feats, duration, action, num_anchors, SAMPLE_NUM_TIMESTEP, CLASS_SIZE, index)
-            
-            action_rec_error[index_star] = F.mse_loss(outputs, gt_T).cpu()
-            best_video_feats[index_star] = outputs.detach().cpu().numpy()
-            best_video_noises[index_star] = noise.detach().cpu().numpy()
+            recon, anchors, anchors_ind = compress_sequence(device, model, gt_T, actions_classes, duration, args.anchor_style, args.inter_style, action, num_anchors, SAMPLE_NUM_TIMESTEP, CLASS_SIZE)
+
+            action_rec_error[index_star] = F.mse_loss(recon, gt_T).cpu()
+            video_feats[index_star] = recon.detach().cpu().numpy()
+            video_anchors[index_star] = anchors.detach().cpu().numpy()
+            video_anchors_ind[index_star] = anchors_ind
+
         if args.print is True:
             logging.info("- - - - - - -")
             logging.info(f"Iteration: {dynamic_iteration+1}")
@@ -121,49 +125,23 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
             logging.info(f"Anchors: {anchor_distibution}")
 
     ###[Save Outputs]
-    best_feats = format_output(best_video_feats)
-    best_noises = format_output(best_video_noises)
-    opt_feat_path = f"{args.data_path}/{args.dataset}/anchor_compressed_na{args.num_anchors}_st{args.stride}__sp{args.split}"
+    formated_video_feats = format_output(video_feats)
+    formated_video_anchors = format_output(video_anchors)
+    opt_feat_path = f"{args.data_path}/{args.dataset}/anchor_compressed_na{args.num_anchors}_st{args.stride}_sp{args.split}"
     os.makedirs(opt_feat_path, exist_ok=True)
     # store features
-    best_feat_name = os.path.join(opt_feat_path, video_name)
-    np.save(best_feat_name, best_feats)
-    # store noises
-    best_noise_name = os.path.join(opt_feat_path, f"noise_{video_name}")
-    np.save(best_noise_name, best_noises)
-    return best_feat_name    
-
-def compress_action(device, model, actions_classes, feats, duration, action, num_anchors, sample_num_timestep, class_size, index):
-    gt_T = torch.from_numpy(feats[:, index : index + duration].T).to(device)
-    c = torch.linspace(0, 1, duration).unsqueeze(1).to(device)
-    a = torch.zeros([duration, class_size]).to(device)
-    a[:, actions_classes[action]] = 1
-    
-    num_anchors_x0_ind = select_anchors(args.anchor_style, duration, num_anchors)
-    num_anchors_x0 = [gt_T[i] for i in num_anchors_x0_ind] # [Sub, D]
-    with torch.no_grad():
-        hot_start = [model.ddim_invert(x0.unsqueeze(0), a[num_anchors_x0_ind[i]].unsqueeze(0), c[num_anchors_x0_ind[i]].unsqueeze(0), sample_num_timestep) for i, x0 in enumerate(num_anchors_x0)] # [Sub, D]
-    noise = torch.stack(hot_start).squeeze(1).to(device)  # [Sub, D]
-    
-    noises = [d for d in range(duration)]
-    for it, ind in enumerate(num_anchors_x0_ind):
-        noises[ind] = noise[it]
-    list_prev_x0_ind = -1
-    for it, f in enumerate(noises):
-        if type(f) is not int:
-            list_prev_x0_ind += 1
-            continue
-        prev_x0_ind = num_anchors_x0_ind[list_prev_x0_ind]
-        next_x0_ind = num_anchors_x0_ind[list_prev_x0_ind + 1]
-        relative_dist_to_prev = (it - prev_x0_ind) / (next_x0_ind - prev_x0_ind)
-        next_coef = interpolation(args.inter_style, relative_dist_to_prev)
-        prev_coef = 1 - next_coef
-        hot_strat_i = prev_coef * noise[list_prev_x0_ind] + next_coef * noise[list_prev_x0_ind + 1]
-        noises[it] = hot_strat_i
-    noises = torch.stack(noises).squeeze(1).to(device)
-    with torch.no_grad():
-        outputs = model.ddim_sample(noises, a, c, sample_num_timestep)
-    return outputs, noise, gt_T
+    video_feats_path = os.path.join(opt_feat_path, f"recon_{video_name}")
+    np.save(video_feats_path, formated_video_feats)
+    # store anchors
+    video_anchor_path = os.path.join(opt_feat_path, f"anchors_{video_name}")
+    np.save(video_anchor_path, formated_video_anchors)
+    # store anchors ind
+    video_anchor_ind_path = os.path.join(opt_feat_path, f"anchors_ind_{video_name}").replace('.npy', '.pkl')
+    with open(video_anchor_ind_path, 'wb') as file:
+        pickle.dump(video_anchors_ind, file)
+    if args.print is True:
+        logging.info(f"Path of recon: {video_feats_path}")
+    return video_feats_path     
 
 def worker(worker_args):
     video_seq, actions_classes, gpu_id = worker_args
@@ -178,7 +156,7 @@ def main():
 
     actions_classes = {a.split()[1]: int(a.split()[0]) for a in actions}
     
-    logging.info(f"---------Processing {args.dataset} with diffusion with num_anchors {args.num_anchors} base on sp {args.split}---------")
+    logging.info(f"---------Condensing {args.dataset}, split{args.split} with num_anchors={args.num_anchors}---------")
     num_gpus = torch.cuda.device_count()
     gpu_ids = list(range(num_gpus))
     logging.info(f"---------Using {num_gpus} gpus---------")
