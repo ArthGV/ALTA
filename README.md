@@ -41,7 +41,7 @@ python data_utils/create_sequences.py --dataset <dataset_name>
 ### 2. Train the Diffusion Model
 
 ```bash
-python train_diffusion_model.py --dataset <dataset_name> --config_path <config_path>
+python src/<data_format>_compression/train_diffusion_model.py --dataset <dataset_name> --config_path <config_path>
 
 ```
 
@@ -50,7 +50,7 @@ python train_diffusion_model.py --dataset <dataset_name> --config_path <config_p
 `original_dataset` → `anchors` + `anchors_indices` + `reconstructed_dataset`
 
 ```bash
-python anchor_compressing.py --dataset <dataset_name> --config_path <config_path> --model_path <model_path>
+python src/<data_format>_compression/anchor_compressing.py --dataset <dataset_name> --config_path <config_path> --model_path <model_path>
 
 ```
 
@@ -59,10 +59,13 @@ python anchor_compressing.py --dataset <dataset_name> --config_path <config_path
 `anchors` + `anchors_indices` → `reconstructed_dataset`
 
 ```bash
-python dataset_reconstruction.py --dataset <dataset_name> --config_path <config_path> --model_path <model_path> --compressed_folder <folder_path> 
+python src/<data_format>_compression/dataset_reconstruction.py --dataset <dataset_name> --config_path <config_path> --model_path <model_path> --compressed_folder <folder_path> 
 
 ```
-
+WITH:
+```bash
+<data_format> : 'feat' if precomputed 1D features, 'frame' if raw frames
+```
 ---
 
 ## Citation

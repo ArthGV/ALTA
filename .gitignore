@@ -1,5 +1,12 @@
 .vscode/
 *.code-workspace
+*.pkl
+*.npy
+*.txt
+*.ipynb
+*.pth
+*.bundle
+*.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

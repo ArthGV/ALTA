@@ -26,7 +26,8 @@ def compress_sequence(device,
                       action: int, 
                       num_anchors: int, 
                       sample_num_timestep: int, 
-                      class_size: int) -> tuple[torch.tensor]:
+                      class_size: int,
+                      vid = False) -> tuple[torch.tensor]:
     
     c = torch.linspace(0, 1, duration).unsqueeze(1).to(device)
     a = torch.zeros([duration, class_size]).to(device)
@@ -36,7 +37,10 @@ def compress_sequence(device,
     anchors_x0 = [gt_T[i] for i in anchors_ind] # [Sub, D]
     with torch.no_grad():
         anchors = [model.ddim_invert(x0.unsqueeze(0), a[anchors_ind[i]].unsqueeze(0), c[anchors_ind[i]].unsqueeze(0), sample_num_timestep) for i, x0 in enumerate(anchors_x0)] # [Sub, D]
-    anchors = torch.stack(anchors).squeeze(1).to(device)  # [Sub, D]
+    if vid:
+        anchors = torch.stack(anchors).to(device)
+    else:
+        anchors = torch.stack(anchors).squeeze(1).to(device)  # [Sub, D]
     
     outputs = reconstruct_sequence_from_anchors(device, model, a, c, duration, anchors, anchors_ind, inter_style, sample_num_timestep)
     return outputs, anchors, anchors_ind

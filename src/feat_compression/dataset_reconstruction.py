@@ -1,15 +1,15 @@
-import torch
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))import torch
 import pickle
 import ast
 import glob
 import numpy as np
 import logging
-import sys
 from tqdm import tqdm
-from diffusion_model import load_diffusion_model
-from inter import reconstruct_sequence_from_anchors
-from utils import format_output
-import os
+from src.feat_compression.diffusion_model import load_diffusion_model
+from src.inter import reconstruct_sequence_from_anchors
+from src.utils import format_output
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 

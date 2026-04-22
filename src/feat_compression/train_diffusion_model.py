@@ -1,9 +1,11 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import argparse
 import torch
-from utils import AverageMeter, BatchGenerater
-from diffusion_model import init_diffusion_model
+from src.utils import AverageMeter, BatchGenerater
+from src.feat_compression.diffusion_model import init_diffusion_model
 import logging
-import sys
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

@@ -1,16 +1,17 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import torch
 import pickle
 import ast
 import glob
 import numpy as np
 import logging
-import sys
 from tqdm import tqdm
-from diffusion_model import load_diffusion_model
-from inter import compress_sequence
-from utils import format_output
+from src.frame_compression.diffusion_model import load_diffusion_model
+from src.inter import compress_sequence
+from src.utils import format_output
 import torch.nn.functional as F
-import os
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -57,7 +58,7 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
     video_name = video_seq.split("/")[-1].replace("txt", "npy")
     if args.print is True:
         logging.info(f"###VIDEO: {video_name}###")
-    gt_feat_path = f"{args.data_path}/{args.dataset}/features/{video_name}" 
+    gt_feat_path = f"{args.data_path}/{args.dataset}/vid_features/{video_name}" 
     feats = np.load(gt_feat_path, allow_pickle=True)
 
     num_anchors_per_action = args.num_anchors
@@ -79,9 +80,9 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
         num_anchors = anchor_distibution[action_ind]
         if args.fixed is True:
             num_anchors = min(duration, args.num_anchors)
-        gt_T = torch.from_numpy(feats[:, index : index + duration].T).to(device)
+        gt_T = torch.from_numpy(feats[index : index + duration]).to(device).to(torch.float32)
 
-        recon, anchors, anchors_ind = compress_sequence(device, model, gt_T, actions_classes, duration, args.anchor_style, args.inter_style, action, num_anchors, SAMPLE_NUM_TIMESTEP, CLASS_SIZE)
+        recon, anchors, anchors_ind = compress_sequence(device, model, gt_T, actions_classes, duration, args.anchor_style, args.inter_style, action, num_anchors, SAMPLE_NUM_TIMESTEP, CLASS_SIZE, vid=True)
 
         action_indexes.append(index)
         actions_durations.append(s)
@@ -109,9 +110,9 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
             anchor_distibution[index_star] += spent_budget
             num_anchors = anchor_distibution[index_star]
             anchor_budget -= spent_budget
-            gt_T = torch.from_numpy(feats[:, index : index + duration].T).to(device)
-
-            recon, anchors, anchors_ind = compress_sequence(device, model, gt_T, actions_classes, duration, args.anchor_style, args.inter_style, action, num_anchors, SAMPLE_NUM_TIMESTEP, CLASS_SIZE)
+            gt_T = torch.from_numpy(feats[index : index + duration]).to(device).to(torch.float32)
+            
+            recon, anchors, anchors_ind = compress_sequence(device, model, gt_T, actions_classes, duration, args.anchor_style, args.inter_style, action, num_anchors, SAMPLE_NUM_TIMESTEP, CLASS_SIZE, vid=True)
 
             action_rec_error[index_star] = F.mse_loss(recon, gt_T).cpu()
             video_feats[index_star] = recon.detach().cpu().numpy()
@@ -157,22 +158,23 @@ def main():
     actions_classes = {a.split()[1]: int(a.split()[0]) for a in actions}
     
     logging.info(f"---------Condensing {args.dataset}, split{args.split} with num_anchors={args.num_anchors}---------")
-    num_gpus = torch.cuda.device_count()
-    gpu_ids = list(range(num_gpus))
+    num_gpus = 1
+    gpu_ids = [None]
     logging.info(f"---------Using {num_gpus} gpus---------")
 
 
-    worker_args = [(video_seq, actions_classes, gpu_ids[i % len(gpu_ids)]) for i, video_seq in enumerate(video_sequences)]
+    worker_args = [(video_seq, actions_classes, None)
+               for video_seq in video_sequences]
+    results = []
 
-    with ProcessPoolExecutor(max_workers=num_gpus) as executor:
-        futures = {executor.submit(worker, args): args for args in worker_args}
-        results = []
-        for future in tqdm(as_completed(futures), total=len(futures)):
-            try:
-                result = future.result()
-                results.append(result)
-            except Exception as e:
-                logging.error(f"Error processing {futures[future]}: {e}")
+    logging.info("Start sequential CPU processing...")
+
+    for worker_arg in tqdm(worker_args): ########################to be changed
+        try:
+            result = worker(worker_arg)
+            results.append(result)
+        except Exception:
+            logging.exception(f"Error processing {worker_arg}")
 
 
 if __name__ == "__main__":
