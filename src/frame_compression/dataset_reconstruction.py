@@ -69,7 +69,7 @@ def reconstuct_video(video_seq, actions_classes, gpu_id):
         anchors_ind_len = len(anchors_ind)
         anchors = video_anchors[anchor_index:anchor_index + anchors_ind_len]
         recon = reconstruct_sequence_from_anchors(device, model, a, c, duration, anchors,  anchors_ind, args.inter_style, SAMPLE_NUM_TIMESTEP)
-        video_recon.append(recon)
+        video_recon.append(recon.cpu())
         anchor_index += anchors_ind_len
 
     ###[Save Outputs]
