@@ -58,7 +58,7 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
     video_name = video_seq.split("/")[-1].replace("txt", "npy")
     if args.print is True:
         logging.info(f"###VIDEO: {video_name}###")
-    gt_feat_path = f"{args.data_path}/{args.dataset}/vid_features/{video_name}" 
+    gt_feat_path = f"{args.data_path}/{args.dataset}/vidc_features/{video_name}" 
     feats = np.load(gt_feat_path, allow_pickle=True)
 
     num_anchors_per_action = args.num_anchors

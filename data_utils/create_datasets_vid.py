@@ -12,7 +12,7 @@ parser.add_argument("--ratio", default=1.0)
 args = parser.parse_args()
 
 
-features_path = f"datasets/{args.dataset}/vid_features/"
+features_path = f"datasets/{args.dataset}/vidc_features/"
 gt_path = f"datasets/{args.dataset}/groundTruth/"
 mapping_file = f"datasets/{args.dataset}/mapping.txt"
 
@@ -53,7 +53,7 @@ def get_progression(indices):
     return np.array(pos, dtype=np.float32)
 
 
-for split in [1,2,3,4]:
+for split in [1]:
     vid_list_path = f"datasets/{args.dataset}/splits/"
     with open(os.path.join(vid_list_path, f"train.split{split}.bundle"), "r") as f:
         videos = f.read().splitlines()
@@ -61,7 +61,7 @@ for split in [1,2,3,4]:
     # num_videos = int(len(videos) * args.ratio)
     # sub_videos = random.sample(videos, k=num_videos)
     task_feats = []
-    task_feat_path = vid_list_path + f"train.split{split}_vid.npy"
+    task_feat_path = vid_list_path + f"train.split{split}_vidc.npy"
     for video in tqdm(videos):
         video_feat = features_path + video.replace("txt", "npy")
         video_gt = gt_path + video

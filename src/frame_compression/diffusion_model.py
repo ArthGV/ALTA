@@ -7,7 +7,7 @@ from typing import Optional
 class DiffusionModelVid(nn.Module):
     def __init__(self, 
                  device,
-                 in_channels: int = 1,        # B&W frames
+                 in_channels: int = 3,
                  timestep_dim: int = 10, 
                  condition_dim: int = 12,
                  num_timesteps: int = 100, 
@@ -47,7 +47,6 @@ class DiffusionModelVid(nn.Module):
 
         t_embed = self.time_mlp(t)                                   # [B, timestep_dim]
 
-        # ③ merge timestep + condition into a per-channel bias, broadcast over H,W
         cond = torch.cat([t_embed, a, c], dim=-1)                    # [B, timestep_dim + condition_dim]
         bias = self.cond_proj(cond)                                  # [B, C]
         bias = bias.unsqueeze(-1).unsqueeze(-1)                      # [B, C, 1, 1]
@@ -61,7 +60,6 @@ class DiffusionModelVid(nn.Module):
         """q(x_t | x_0)"""
         if noise is None:
             noise = torch.randn_like(x0)
-        # ④ view() reshape to broadcast over [B, C, H, W]
         sqrt_alphas_cumprod          = self.alphas_cumprod[t].sqrt().view(-1, 1, 1, 1)
         sqrt_one_minus_alphas_cumprod = (1. - self.alphas_cumprod[t]).sqrt().view(-1, 1, 1, 1)
         return sqrt_alphas_cumprod * x0 + sqrt_one_minus_alphas_cumprod * noise, noise
@@ -118,7 +116,7 @@ def _init_diffusion_model(device, model_config_path: str):
         beta_start = model_config['model_parameters']['beta_start']
         beta_end = model_config['model_parameters']['beta_end']
 
-    model = DiffusionModelVid(device, 1, timestep_dim, condition_dim, num_timesteps, beta_start, beta_end)
+    model = DiffusionModelVid(device, 3, timestep_dim, condition_dim, num_timesteps, beta_start, beta_end)
     return model, model_config
     
 def init_diffusion_model(device, model_config_path: str):

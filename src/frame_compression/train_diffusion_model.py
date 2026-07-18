@@ -20,7 +20,7 @@ parser.add_argument("--config_path", type=str)
 parser.add_argument("--batch_size", default=512, type=int)
 parser.add_argument("--epochs", default=10000, type=int)
 parser.add_argument("--print_gap", default=1, type=int)
-parser.add_argument("--save_gap", default=100, type=int)
+parser.add_argument("--save_gap", default=1, type=int)
 args = parser.parse_args()
 
 EPOCHS = args.epochs
@@ -28,7 +28,7 @@ PRINT_GAP = args.print_gap
 SAVE_GAP = args.save_gap
 
 # feat file
-task_feat_path = f"{args.data_path}/{args.dataset}/splits/" + f"train.split{args.split}_vid.npy"
+task_feat_path = f"{args.data_path}/{args.dataset}/splits/" + f"train.split{args.split}_vidc.npy"
 # batch generator
 batch_gen = BatchGenerater(task_feat_path)
 # model
@@ -37,7 +37,7 @@ model, model_config = init_diffusion_model(device, model_config_path=args.config
 optimizer = torch.optim.Adam(model.parameters())
 #output paths
 output_path = 'models/'
-exp = f"diffusion_model_{args.dataset}_bz{args.batch_size}_ts{model_config['model_parameters']['num_timesteps']}_td{model_config['model_parameters']['timestep_dim']}_cd{model_config['model_parameters']['condition_dim']}"
+exp = f"diffusion_model_c_{args.dataset}_bz{args.batch_size}_ts{model_config['model_parameters']['num_timesteps']}_td{model_config['model_parameters']['timestep_dim']}_cd{model_config['model_parameters']['condition_dim']}"
 
 # logging
 log_filename = f"{args.dataset}_split{args.split}_{exp}.log"
