@@ -1,6 +1,6 @@
 # Adaptive Latent Trajectory Anchoring (ALTA) for Action Segmentation Dataset Condensation
 
-> Official implementation of the paper: [*Paper title to be provided*](#) <!-- link to be provided -->
+> Official implementation of the paper: [arXiv:2607.09081](https://arxiv.org/abs/2607.09081)
 
 ---
 
@@ -13,18 +13,28 @@ ALTA is a framework for action segmentation dataset condensation using adaptive 
 ## Authors
 
 **Main Contributors:** 
-- Arthème Gauthier-Villars — ETH Zürich / National Univerity of Singapore
-- Guodong Ding — National Univerity of Singapore
+- Arthème Gauthier-Villars — ETH Zürich / National University of Singapore
+- Guodong Ding — National University of Singapore
 
 **Project Supervisors:** 
-- Dr. Angela Yao — National Univerity of Singapore
+- Dr. Angela Yao — National University of Singapore
 - Prof. Dr. Siyu Tang — ETH Zürich
 
 ---
 
 ## Getting Started
 
-Once the datasets have been uploaded, follow the steps below to run the full pipeline.
+### Environment
+
+```bash
+conda env create -f env.yaml && conda activate alta
+```
+
+`env.yaml` is an export from macOS (Apple Silicon); on Linux/CUDA machines install the equivalent packages (Python 3.10, PyTorch, numpy, PyYAML, tqdm) instead of using the pinned builds.
+
+### Data
+
+Place each dataset under `datasets/<dataset_name>/` (`features/` or `vidc_features/`, `groundTruth/`, `mapping.txt`, `splits/`), then follow the steps below to run the full pipeline. Commands are run from the repository root.
 
 ### 1. Prepare the Data
 
@@ -70,9 +80,7 @@ WITH:
 
 ## Citation
 
-If you use this code in your research, please cite our paper: 
-
-[*citation to be provided*]
+If you use this code in your research, please cite our paper: [arXiv:2607.09081](https://arxiv.org/abs/2607.09081).
 
 ---
 

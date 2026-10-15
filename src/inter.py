@@ -7,27 +7,29 @@ def interpolation(interpolation_style: Literal['linear', 'sigmoid'], x: float) -
         return x
     elif interpolation_style == 'sigmoid':
         return 1 / (1 + np.exp(-10 * (x - 0.5)))
+    raise ValueError(f"Unknown interpolation style: {interpolation_style}")
 
-def select_anchors(anchoring_style: Literal['border', 'equidistant'], duration, num_anchors) -> List[int]:
+def select_anchors(anchoring_style: Literal['border', 'equidistant'], duration: int, num_anchors: int) -> List[int]:
     if num_anchors > duration:
         raise ValueError("num_anchors cannot be greater than duration.")
     if anchoring_style == 'border':
         return [0, duration - 1]
     elif anchoring_style == 'equidistant':
         return np.linspace(0, duration - 1, num_anchors, dtype=int).tolist()
-    
+    raise ValueError(f"Unknown anchoring style: {anchoring_style}")
+
 def compress_sequence(device, 
                       model, 
-                      gt_T: torch.tensor, 
-                      actions_classes: dict, 
-                      duration: int, 
+                      gt_T: torch.Tensor,
+                      actions_classes: dict,
+                      duration: int,
                       anchor_style: str,
                       inter_style: str,
-                      action: int, 
-                      num_anchors: int, 
-                      sample_num_timestep: int, 
+                      action: str,
+                      num_anchors: int,
+                      sample_num_timestep: int,
                       class_size: int,
-                      vid = False) -> tuple[torch.tensor]:
+                      vid: bool = False) -> tuple[torch.Tensor, torch.Tensor, List[int]]:
     
     c = torch.linspace(0, 1, duration).unsqueeze(1).to(device)
     a = torch.zeros([duration, class_size]).to(device)
@@ -47,20 +49,20 @@ def compress_sequence(device,
     
 def reconstruct_sequence_from_anchors(device, 
                                       model, 
-                                      a: torch.tensor,
-                                      c: torch.tensor,
-                                      duration: int, 
-                                      anchors: torch.tensor, 
-                                      anchors_ind: list[int], 
-                                      inter_style: str, 
-                                      sample_num_timestep: int) -> torch.tensor:
+                                      a: torch.Tensor,
+                                      c: torch.Tensor,
+                                      duration: int,
+                                      anchors: torch.Tensor,
+                                      anchors_ind: List[int],
+                                      inter_style: str,
+                                      sample_num_timestep: int) -> torch.Tensor:
 
     latents = [d for d in range(duration)]
     for it, ind in enumerate(anchors_ind):
         latents[ind] = anchors[it]
     list_prev_x0_ind = -1
     for it, f in enumerate(latents):
-        if type(f) is not int:
+        if it in anchors_ind:
             list_prev_x0_ind += 1
             continue
         prev_x0_ind = anchors_ind[list_prev_x0_ind]

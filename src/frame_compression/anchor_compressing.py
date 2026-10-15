@@ -1,6 +1,13 @@
+"""Anchor-based compression of a raw-frame dataset.
+
+Each video is split into action segments. A segment is compressed to a few anchors (DDIM-inverted
+latents of selected frames) and reconstructed by interpolating them. Unless --fixed is set, the anchor
+budget is spent greedily on the segments with the worst reconstruction error.
+"""
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import functools
 import torch
 import pickle
 import ast
@@ -28,11 +35,9 @@ parser.add_argument("--num_anchors",default=8, type=int)
 parser.add_argument("--stride", default=1, type=int)
 parser.add_argument("--anchor_style", default='equidistant', type=str)
 parser.add_argument("--inter_style", default='linear', type=str)
-parser.add_argument("--print", default=False, type=bool)
-parser.add_argument("--fixed", default=False, type=bool)
+parser.add_argument("--print", action="store_true")
+parser.add_argument("--fixed", action="store_true")
 args = parser.parse_args()
-
-ANCHOR_STRIDE = args.stride
 
 log_filename = f"anchor_compressing_{args.dataset}_split{args.split}_num_anchors{args.num_anchors}.log"
 logging.basicConfig(
@@ -44,9 +49,14 @@ logging.basicConfig(
     ],
 )
 
+@functools.lru_cache(maxsize=None)
+def get_model(device):
+    # loaded once instead of once per video
+    return load_diffusion_model(device, model_config_path=args.config_path, model_weights_path=args.model_path)
+
 def process_video_seq(video_seq, actions_classes, gpu_id):
-    device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
-    model, model_config = load_diffusion_model(device, model_config_path=args.config_path, model_weights_path=args.model_path)
+    device = torch.device(f"cuda:{gpu_id or 0}" if torch.cuda.is_available() else "cpu")
+    model, model_config = get_model(device)
     SAMPLE_NUM_TIMESTEP = model_config['model_parameters']['sample_num_timesteps']
     CLASS_SIZE = model_config['dataset']['class_size']
 
@@ -55,7 +65,7 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
         for line in f:
             seq.append(ast.literal_eval(line.strip()))
     
-    video_name = video_seq.split("/")[-1].replace("txt", "npy")
+    video_name = os.path.basename(video_seq).replace(".txt", ".npy")
     if args.print is True:
         logging.info(f"###VIDEO: {video_name}###")
     gt_feat_path = f"{args.data_path}/{args.dataset}/vidc_features/{video_name}" 
@@ -63,7 +73,7 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
 
     num_anchors_per_action = args.num_anchors
     number_of_actions = len(seq)
-    anchor_distibution = [2 for _ in range(number_of_actions)] #minimum for interpolation
+    anchor_distribution = [2 for _ in range(number_of_actions)] #minimum for interpolation
     anchor_budget = number_of_actions * (num_anchors_per_action - 2)
 
     ###[Initialize compression]
@@ -75,9 +85,9 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
     for action_ind, s in enumerate(seq):
         action, duration = s
         if duration == 1:
-            anchor_distibution[action_ind] = 1
+            anchor_distribution[action_ind] = 1
             anchor_budget += 1
-        num_anchors = anchor_distibution[action_ind]
+        num_anchors = anchor_distribution[action_ind]
         if args.fixed is True:
             num_anchors = min(duration, args.num_anchors)
         gt_T = torch.from_numpy(feats[index : index + duration]).to(device).to(torch.float32)
@@ -96,19 +106,24 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
         ###[Dynamic Anchor Attribution]
         dynamic_iteration = 0
         while anchor_budget > 0:
+            dynamic_iteration += 1
             if args.print is True:
                 logging.info("- - - - - - -")
-                logging.info(f"Iteration: {dynamic_iteration+1}")
+                logging.info(f"Iteration: {dynamic_iteration}")
                 logging.info(f"Budget: {anchor_budget}")
-                logging.info(f"Anchors: {anchor_distibution}")
-                dynamic_iteration += 1
+                logging.info(f"Anchors: {anchor_distribution}")
 
-            index_star = np.argmax(action_rec_error) #worst performing sub sequence
+            # segments that already have one anchor per frame cannot receive more
+            candidate_errors = [-np.inf if n >= d else float(e) for e, n, (_, d) in zip(action_rec_error, anchor_distribution, actions_durations)]
+            index_star = np.argmax(candidate_errors) #worst performing sub sequence
+            if candidate_errors[index_star] == -np.inf:
+                logging.warning(f"All segments are saturated, {anchor_budget} anchors left unused")
+                break
             index = action_indexes[index_star]
             action, duration = actions_durations[index_star]
-            spent_budget = min(ANCHOR_STRIDE, anchor_budget, duration - anchor_distibution[index_star])
-            anchor_distibution[index_star] += spent_budget
-            num_anchors = anchor_distibution[index_star]
+            spent_budget = min(args.stride, anchor_budget, duration - anchor_distribution[index_star])
+            anchor_distribution[index_star] += spent_budget
+            num_anchors = anchor_distribution[index_star]
             anchor_budget -= spent_budget
             gt_T = torch.from_numpy(feats[index : index + duration]).to(device).to(torch.float32)
             
@@ -121,14 +136,14 @@ def process_video_seq(video_seq, actions_classes, gpu_id):
 
         if args.print is True:
             logging.info("- - - - - - -")
-            logging.info(f"Iteration: {dynamic_iteration+1}")
+            logging.info(f"Final allocation after {dynamic_iteration} iterations")
             logging.info(f"Budget: {anchor_budget}")
-            logging.info(f"Anchors: {anchor_distibution}")
+            logging.info(f"Anchors: {anchor_distribution}")
 
     ###[Save Outputs]
     formated_video_feats = format_output(video_feats)
     formated_video_anchors = format_output(video_anchors)
-    opt_feat_path = f"{args.data_path}/{args.dataset}/anchor_compressed_na{args.num_anchors}_st{args.stride}_sp{args.split}"
+    opt_feat_path = f"{args.data_path}/{args.dataset}/anchor_compressed_na{args.num_anchors}_st{args.stride}_sp{args.split}{'_fixed' if args.fixed else ''}"
     os.makedirs(opt_feat_path, exist_ok=True)
     # store features
     video_feats_path = os.path.join(opt_feat_path, f"recon_{video_name}")
@@ -151,7 +166,7 @@ def worker(worker_args):
 def main():
     video_sequences = glob.glob(f"{args.data_path}/{args.dataset}/seqs/*.txt")
 
-    with open(f"datasets/{args.dataset}/mapping.txt", "r") as f:
+    with open(f"{args.data_path}/{args.dataset}/mapping.txt", "r") as f:
         actions = f.read().splitlines()
 
 
@@ -165,16 +180,20 @@ def main():
 
     worker_args = [(video_seq, actions_classes, None)
                for video_seq in video_sequences]
-    results = []
+    failed = []
 
-    logging.info("Start sequential CPU processing...")
+    logging.info("Start sequential processing...")
 
-    for worker_arg in tqdm(worker_args): ########################to be changed
+    for worker_arg in tqdm(worker_args):
         try:
-            result = worker(worker_arg)
-            results.append(result)
+            worker(worker_arg)
         except Exception:
+            failed.append(worker_arg[0])
             logging.exception(f"Error processing {worker_arg}")
+
+    if failed:
+        logging.error(f"{len(failed)}/{len(video_sequences)} videos failed: {failed}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
